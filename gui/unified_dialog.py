@@ -573,6 +573,22 @@ class ASAUnifiedDialog(QtWidgets.QDialog):
             sprocket_library_search_dirs=self.library_search_dirs,
         )
         output_path = generated["saved_path"]
+        chain_only = calculation["mode"] == self.CHAIN_MODE
+        if chain_only:
+            assembly_details = (
+                f"\nApp::Link instances: {len(generated['links'])}"
+                "\nSprockets: not generated in rigid-link chain mode"
+            )
+        else:
+            assembly_details = (
+                f"\nSmall sprocket: {generated['small_sprocket'].Label}"
+                f"\nLarge sprocket: {generated['large_sprocket'].Label}"
+                f"\nApp::Link instances: {len(generated['links'])}"
+                + "\nSmall sprocket: "
+                + ("reused from library" if generated["small_sprocket_cache_hit"] else "added to library")
+                + "\nLarge sprocket: "
+                + ("reused from library" if generated["large_sprocket_cache_hit"] else "added to library")
+            )
         report = (
             calculation["report"]
             + "\n\nDISCRETE SOLVER DETAILS\n"
@@ -581,21 +597,16 @@ class ASAUnifiedDialog(QtWidgets.QDialog):
             + format_result_report(result)
             + "\n\nFREECAD ASSEMBLY\n"
             + "-" * 62
-            + f"\nSmall sprocket: {generated['small_sprocket'].Label}"
-            + f"\nLarge sprocket: {generated['large_sprocket'].Label}"
-            + f"\nApp::Link instances: {len(generated['links'])}"
-            + "\nSmall sprocket: "
-            + ("reused from library" if generated["small_sprocket_cache_hit"] else "added to library")
-            + "\nLarge sprocket: "
-            + ("reused from library" if generated["large_sprocket_cache_hit"] else "added to library")
+            + assembly_details
             + f"\nFile: {output_path}"
         )
         self.report.setPlainText(report)
-        self.status_label.setText(f"Chain drive saved to: {output_path}")
+        model_name = "Rigid-link chain" if chain_only else "Chain drive"
+        self.status_label.setText(f"{model_name} saved to: {output_path}")
         QtWidgets.QMessageBox.information(
             self,
-            "Chain Drive Generated",
-            "The complete chain drive was generated successfully.\n\n"
+            f"{model_name} Generated",
+            f"The {model_name.lower()} was generated successfully.\n\n"
             f"File:\n{output_path}",
         )
 

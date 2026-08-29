@@ -68,6 +68,23 @@ def _find_sprocket_object(doc, sprocket_data, bore_diameter_mm):
     return candidates[0]
 
 
+def _show_sprocket_document(doc, sprocket):
+    """Make a standalone library object visible in its own active document."""
+    if not getattr(App, "GuiUp", False):
+        return
+    try:
+        import FreeCADGui as Gui
+
+        App.setActiveDocument(doc.Name)
+        sprocket.ViewObject.Visibility = True
+        gui_doc = Gui.activeDocument()
+        if gui_doc is not None:
+            gui_doc.activeView().viewAxonometric()
+            gui_doc.activeView().fitAll()
+    except Exception:
+        pass
+
+
 def _candidate_paths(
     library_dir,
     sprocket_data,
@@ -239,14 +256,7 @@ def open_or_create_sprocket_document(
             float(chain_data["roller_diameter_R_mm"]),
             int(sprocket_data["teeth_z"]),
         )
-        if getattr(App, "GuiUp", False):
-            try:
-                import FreeCADGui as Gui
-
-                Gui.activeDocument().activeView().viewAxonometric()
-                Gui.activeDocument().activeView().fitAll()
-            except Exception:
-                pass
+        _show_sprocket_document(doc, sprocket)
         return doc, sprocket, geometry, existing, True
 
     doc, sprocket, geometry, output_path = generate_sprocket_file(
@@ -255,4 +265,5 @@ def open_or_create_sprocket_document(
         bore_diameter_mm=float(bore_diameter_mm),
         output_dir=library_dir,
     )
+    _show_sprocket_document(doc, sprocket)
     return doc, sprocket, geometry, Path(output_path).resolve(), False
