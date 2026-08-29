@@ -1,11 +1,26 @@
-"""Register the Chain Drive workbench in FreeCAD."""
+"""Register the Chain Drive workbench in FreeCAD.
+
+FreeCAD executes ``InitGui.py`` rather than importing it normally, so
+``__file__`` is not guaranteed to exist here.
+"""
 
 from pathlib import Path
+import sys
 
 import FreeCADGui as Gui
 
 
-MODULE_DIR = Path(__file__).resolve().parent
+def _resolve_module_dir():
+    for entry in sys.path:
+        if not entry:
+            continue
+        candidate = Path(entry)
+        if candidate.name == "ChainDrive" and (candidate / "package.xml").is_file():
+            return candidate.absolute()
+    raise RuntimeError("Could not resolve the installed ChainDrive module directory.")
+
+
+MODULE_DIR = _resolve_module_dir()
 
 
 class ChainDriveWorkbench(Gui.Workbench):
@@ -14,7 +29,7 @@ class ChainDriveWorkbench(Gui.Workbench):
     Icon = str(MODULE_DIR / "Resources" / "icons" / "ASAChainDriveWorkbench.svg")
 
     def Initialize(self):
-        from commands import register_commands
+        from chain_drive_commands import register_commands
         command_list = register_commands()
         self.appendToolbar("Chain Drive", command_list)
         self.appendMenu("Chain Drive", command_list)
@@ -30,4 +45,3 @@ class ChainDriveWorkbench(Gui.Workbench):
 
 
 Gui.addWorkbench(ChainDriveWorkbench())
-

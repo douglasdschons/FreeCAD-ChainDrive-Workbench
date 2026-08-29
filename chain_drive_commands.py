@@ -1,4 +1,8 @@
-"""FreeCAD GUI commands exposed by the workbench."""
+"""FreeCAD GUI commands exposed by the Chain Drive workbench.
+
+The module name is deliberately addon-specific to avoid colliding with other
+installed FreeCAD workbenches that also ship a top-level ``commands.py``.
+"""
 
 from pathlib import Path
 
@@ -48,4 +52,3 @@ def register_commands():
     for name, command in COMMANDS.items():
         Gui.addCommand(name, command)
     return list(COMMANDS)
-
