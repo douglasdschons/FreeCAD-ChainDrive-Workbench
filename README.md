@@ -3,8 +3,9 @@
 A FreeCAD workbench for catalog-backed ASA/ANSI roller-chain sprockets,
 exact-pitch rigid-link chains, and complete two-sprocket drives.
 
-> Status: v0.1.0 development candidate. Geometry is validated for the cases
-> reported below; public release and Addon Manager submission remain pending.
+> Status: validated v0.1.0 development candidate. The three GUI workflows and
+> the reported mathematical/CAD cases have been tested; public release and
+> Addon Manager submission remain pending.
 
 ## Features
 
@@ -85,4 +86,3 @@ deferred and marked `% TODO FIGURE`.
 ## License and author
 
 Copyright Douglas D. Schons. Licensed under LGPL-2.1-or-later; see `LICENSE`.
-

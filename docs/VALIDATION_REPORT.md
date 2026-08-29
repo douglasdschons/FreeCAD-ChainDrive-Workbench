@@ -12,9 +12,9 @@ Python 3.11 for CAD tests. Measurements are approximate workstation timings.
 - FreeCAD headless: InnerLink, OuterLink, OffsetLink, sprocket, 47-link chain,
   and full drive generated without exception; all inspected shapes valid and
   non-null.
-- GUI registration script is included. Automated screenshot control could not
-  reliably inspect the second FreeCAD window, so visible command activation is
-  still a final manual release gate.
+- GUI validation: the user tested **Generate Sprocket**, **Generate Chain**, and
+  **Generate Chain Drive** in FreeCAD 1.1.2 after the startup, standalone
+  visibility, and chain-only reporting fixes. All three workflows passed.
 
 ## Multi-size solver matrix
 
@@ -53,4 +53,3 @@ fully CAD-validated.
 | ASA80 chain scaling | 153 links | 6.74 s |
 
 All chain cases used three shared rigid templates and `App::Link` instances.
-

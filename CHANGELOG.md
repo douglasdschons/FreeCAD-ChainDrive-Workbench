@@ -9,4 +9,6 @@
 - Use FreeCAD user-data paths for generated files and cached sprockets.
 - Add pure-Python regression/catalog tests and FreeCAD headless CAD smoke tests.
 - Add textual technical reference, architecture inventory, and CI workflow.
-
+- Validate all three GUI workflows in FreeCAD 1.1.2.
+- Fix startup module isolation, standalone sprocket visibility, and chain-only
+  result reporting.
