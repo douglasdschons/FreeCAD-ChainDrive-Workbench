@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+  <name>ChainDrive</name>
+  <version>0.1.0</version>
+  <date>2026-08-29</date>
+  <description>Parametric ASA/ANSI sprockets and exact-pitch rigid-link chain-drive assemblies.</description>
+  <maintainer email="">Douglas D. Schons</maintainer>
+  <license file="LICENSE">LGPL-2.1-or-later</license>
+  <url type="repository" branch="main">https://github.com/douglasdschons/FreeCAD-ChainDrive-Workbench</url>
+  <icon>Resources/icons/ASAChainDriveWorkbench.svg</icon>
+  <freecadmin>1.0.0</freecadmin>
+  <content>
+    <workbench>
+      <name>Chain Drive</name>
+      <classname>ChainDriveWorkbench</classname>
+      <subdirectory>./</subdirectory>
+      <icon>Resources/icons/ASAChainDriveWorkbench.svg</icon>
+    </workbench>
+  </content>
+</package>
+

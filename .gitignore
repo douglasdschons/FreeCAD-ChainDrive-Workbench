@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.FCStd
+*.FCBak
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+output/
+*.egg-info/
+
