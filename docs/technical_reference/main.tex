@@ -1,0 +1,125 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,booktabs,geometry,hyperref}
+\geometry{margin=25mm}
+\title{FreeCAD Chain Drive Workbench: Technical Reference}
+\author{Douglas D. Schons}
+\date{Version 0.1.0}
+\begin{document}
+\maketitle
+
+\section{Introduction}
+This workbench generates ASA/ANSI single-strand roller-chain geometry using a
+catalog-backed, discrete rigid-link model. It is a CAD-generation aid, not a
+substitute for load, fatigue, lubrication, or manufacturing verification.
+
+\section{Workbench Architecture}
+The dependency direction is GUI $\rightarrow$ application API $\rightarrow$
+core/CAD. Pure mathematics and catalog parsing do not import FreeCAD.
+% TODO FIGURE: dependency diagram
+
+\section{Data Sources and Standards}
+Chain dimensions are stored in the ENCO-derived chain catalog. Commercial
+sprocket body dimensions are read from per-series ENCO tables. Tooth-space
+construction follows the ASME B29.1/industry construction implemented in the
+validated source code. Catalog provenance should be rechecked before release.
+
+\section{Coordinate System}
+Solver points $(x,y)$ map to FreeCAD $(X,Z)$. A positive planar angle $\theta$
+is a FreeCAD rotation about $-Y$. Every standard link template has
+$\mathrm{JointA}=(0,0,0)$ and $\mathrm{JointB}=(P,0,0)$.
+% TODO FIGURE: solver to FreeCAD coordinate mapping
+
+\section{Chain Pitch Geometry}
+For pitch $P$ and sprocket tooth count $z$, pitch radius and diameter are
+\begin{equation} r_p=\frac{P}{2\sin(\pi/z)},\qquad D_p=\frac{P}{\sin(\pi/z)}. \end{equation}
+
+\section{Continuous Reference Geometry}
+Classical tangent and wrap geometry supplies a reference path and an initial
+estimate only. The final solution does not impose the obsolete continuous
+length equation $C_i(a)=NP$ as its closure condition.
+
+\section{Discrete Rigid-Link Model}
+Roller centers $\mathbf p_i$ obey
+\begin{equation}\|\mathbf p_{i+1}-\mathbf p_i\|=P.\end{equation}
+The path is walked by circle/path intersections, retaining sprocket seating and
+straight-span transitions while enforcing one rigid pitch per step.
+
+\section{Link-Count Selection}
+Candidate integer counts near the continuous estimate are tested. An odd count
+requires an OffsetLink; requiring an even count filters candidates accordingly.
+
+\section{Discrete Closure and Center-Distance Solver}
+For fixed integer $N$, the center distance $a$ is solved from the signed final
+step closure residual. The reported geometric closure is
+\begin{equation}e_c=\|\mathbf p_N-\mathbf p_0\|,\end{equation}
+and the maximum pitch error is the maximum deviation of each span from $P$.
+
+\section{CAD Pose Generation}
+Each span supplies position $(x_i,0,y_i)$ and angle
+$\theta_i=\operatorname{atan2}(y_{i+1}-y_i,x_{i+1}-x_i)$. Instances use
+\texttt{App::Link} and share three rigid templates.
+
+\section{InnerLink}
+The InnerLink template contains two inner plates and the roller/bushing
+interfaces, with its two joints separated by one pitch.
+% TODO FIGURE: InnerLink
+
+\section{OuterLink}
+The OuterLink contains outer plates and connecting pins with the same canonical
+joint convention.
+% TODO FIGURE: OuterLink
+
+\section{OffsetLink}
+The preserved validated OffsetLink handles odd chains. Its terminal span is
+mapped roller-to-pin, so the placement reverses the canonical template by
+$180^\circ$ while preserving the solver endpoints.
+% TODO FIGURE: OffsetLink
+
+\section{Sprocket Pitch Geometry}
+Pitch-circle geometry uses the exact polygonal relation above rather than a
+continuous belt approximation.
+
+\section{Roller Seating}
+The roller diameter from the chain catalog controls the seating construction
+and associated root geometry.
+
+\section{Tooth-Space Mathematical Construction}
+The generator constructs one tooth-space cutter from points, lines, and tangent
+arcs, then applies a polar pattern before subtraction.
+% TODO FIGURE: tooth-space construction
+
+\section{Commercial Sprocket Body}
+Outside diameter, hub diameter, overall width, pilot bore, and maximum bore are
+read from the selected ENCO record. Missing or invalid records are not offered.
+
+\section{Parametric Sprocket CAD Generation}
+A revolved body is cut by patterned tooth spaces and the selected bore. The
+result is cached in the user's FreeCAD data area and copied into assemblies.
+
+\section{Complete Assembly}
+The small sprocket is centered at $X=0$ and the large sprocket at the corrected
+distance. Phase is chosen from the nearest roller center on each pitch circle.
+% TODO FIGURE: complete assembly
+
+\section{FreeCAD Workbench Architecture}
+\texttt{Init.py} remains headless-safe. \texttt{InitGui.py} registers the
+workbench and three commands. Resources resolve relative to the installed module.
+
+\section{Validation}
+The canonical ASA80 11/20/400 case must give $N=47$, an OffsetLink, and corrected
+center distance approximately $398.338658801$ mm, with closure and pitch errors
+below $10^{-8}$ mm. Catalog and CAD validity checks supplement this regression.
+
+\section{Limitations}
+Validation does not establish load capacity or manufacturability. Multi-strand
+chains, dynamics, wear, interference over motion, and formal Addon Manager
+compatibility remain outside version 0.1.0.
+
+\section{References}
+\begin{itemize}
+\item ASME B29.1, Precision Power Transmission Roller Chains, Attachments, and Sprockets.
+\item ENCO commercial roller-chain and sprocket dimension tables used by the supplied catalogs.
+\item FreeCAD documentation for Python workbenches and \texttt{App::Link}.
+\end{itemize}
+\end{document}
+
