@@ -10,3 +10,34 @@ dist/
 output/
 *.egg-info/
 
+
+# Local credentials and environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Editor, temporary, and generated files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.log
+*.FCStd1
+*.FCStd2
+*.FCStd.*
+outputs/
+work/
+*.aux
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz

@@ -1,125 +1,569 @@
 \documentclass[11pt]{article}
-\usepackage{amsmath,amssymb,booktabs,geometry,hyperref}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{amsmath,amssymb,booktabs,longtable,array,geometry,graphicx,hyperref,microtype}
 \geometry{margin=25mm}
-\title{FreeCAD Chain Drive Workbench: Technical Reference}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\newcommand{\vet}[1]{\boldsymbol{#1}}
+\newcommand{\codigo}[1]{\texttt{#1}}
+\newcommand{\figpendente}[2]{\par\medskip\noindent\fbox{\parbox{0.94\textwidth}{\textbf{FIGURA A PREPARAR:} #1\\\textbf{Base sugerida:} #2}}\par\medskip}
+
+\title{Nota Técnica do FreeCAD Chain Drive Workbench\\
+Conversão de catálogos comerciais em modelos CAD e solução geométrica discreta de transmissões por corrente}
 \author{Douglas D. Schons}
-\date{Version 0.1.0}
+\date{Versão de trabalho para revisão --- 31 de agosto de 2026}
+
 \begin{document}
 \maketitle
 
-\section{Introduction}
-This workbench generates ASA/ANSI single-strand roller-chain geometry using a
-catalog-backed, discrete rigid-link model. It is a CAD-generation aid, not a
-substitute for load, fatigue, lubrication, or manufacturing verification.
+\begin{abstract}
+O \emph{FreeCAD Chain Drive Workbench} foi desenvolvido para resolver dois
+problemas recorrentes no projeto mecânico de transmissões por corrente. O
+primeiro é transformar informações dispersas em catálogos comerciais e normas
+técnicas em modelos CAD tridimensionais utilizáveis diretamente no FreeCAD.
+Essa função permite selecionar uma corrente ASA e rodas dentadas comerciais e
+gerar a corrente, uma roda dentada isolada ou o conjunto completo formado por
+duas rodas dentadas e uma corrente. O segundo problema é a incompatibilidade
+entre uma distância entre centros inicialmente desejada e o comprimento
+discreto da corrente, que somente pode possuir um número inteiro de passos. O
+Workbench calcula o número de elos, identifica a necessidade de elo de redução
+e corrige a distância entre centros para produzir um polígono fechado de
+centros de roletes com passo constante. Esta nota apresenta o fluxo completo
+do catálogo ao CAD, as condições de contorno comerciais, o equacionamento
+geométrico, a geração paramétrica dos elos e das rodas dentadas, a integração
+com o FreeCAD e a metodologia de validação.
+\end{abstract}
 
-\section{Workbench Architecture}
-The dependency direction is GUI $\rightarrow$ application API $\rightarrow$
-core/CAD. Pure mathematics and catalog parsing do not import FreeCAD.
-% TODO FIGURE: dependency diagram
+\noindent\textbf{Palavras-chave:} corrente de rolos; roda dentada; sprocket;
+distância entre centros; modelo discreto; catálogo comercial; FreeCAD; CAD
+paramétrico; ASA; ANSI.
 
-\section{Data Sources and Standards}
-Chain dimensions are stored in the ENCO-derived chain catalog. Commercial
-sprocket body dimensions are read from per-series ENCO tables. Tooth-space
-construction follows the ASME B29.1/industry construction implemented in the
-validated source code. Catalog provenance should be rechecked before release.
+\tableofcontents
 
-\section{Coordinate System}
-Solver points $(x,y)$ map to FreeCAD $(X,Z)$. A positive planar angle $\theta$
-is a FreeCAD rotation about $-Y$. Every standard link template has
-$\mathrm{JointA}=(0,0,0)$ and $\mathrm{JointB}=(P,0,0)$.
-% TODO FIGURE: solver to FreeCAD coordinate mapping
+\section{O problema de engenharia resolvido pelo Workbench}
 
-\section{Chain Pitch Geometry}
-For pitch $P$ and sprocket tooth count $z$, pitch radius and diameter are
-\begin{equation} r_p=\frac{P}{2\sin(\pi/z)},\qquad D_p=\frac{P}{\sin(\pi/z)}. \end{equation}
+No desenvolvimento de uma transmissão por corrente, o projetista normalmente
+precisa realizar duas tarefas que, embora relacionadas, costumam ser executadas
+separadamente.
 
-\section{Continuous Reference Geometry}
-Classical tangent and wrap geometry supplies a reference path and an initial
-estimate only. The final solution does not impose the obsolete continuous
-length equation $C_i(a)=NP$ as its closure condition.
+A primeira tarefa é selecionar componentes comerciais. Catálogos de
+fabricantes apresentam séries ASA, passos, diâmetros de rolete, larguras,
+números de dentes disponíveis, diâmetros externos, cubos e limites de furação.
+Essas informações são adequadas para consulta, mas não constituem diretamente
+um conjunto CAD. Para utilizá-las em um projeto mecânico, o projetista ainda
+precisa interpretar tabelas, reconstruir geometrias e organizar as peças no
+ambiente tridimensional.
 
-\section{Discrete Rigid-Link Model}
-Roller centers $\mathbf p_i$ obey
-\begin{equation}\|\mathbf p_{i+1}-\mathbf p_i\|=P.\end{equation}
-The path is walked by circle/path intersections, retaining sprocket seating and
-straight-span transitions while enforcing one rigid pitch per step.
+A segunda tarefa é fechar geometricamente o acionamento. A distância entre
+centros desejada pode ser qualquer valor real, mas a corrente somente pode ser
+montada com um número inteiro de intervalos de passo. Quando a geometria é
+tratada apenas por comprimentos contínuos de arcos e tangentes, o resultado é
+uma boa estimativa inicial, porém não assegura que todos os centros de roletes
+estejam separados exatamente por um passo e que o último elo encontre o
+primeiro sem deformação artificial.
 
-\section{Link-Count Selection}
-Candidate integer counts near the continuous estimate are tested. An odd count
-requires an OffsetLink; requiring an even count filters candidates accordingly.
+O Workbench reúne essas duas tarefas em um único fluxo:
+\begin{enumerate}
+\item consulta uma base de dados derivada de catálogos comerciais;
+\item limita as escolhas às correntes e rodas dentadas disponíveis nessa base;
+\item calcula a geometria discreta do acionamento;
+\item determina o número de elos e a distância entre centros corrigida;
+\item gera corpos CAD paramétricos e os organiza em um documento FreeCAD.
+\end{enumerate}
 
-\section{Discrete Closure and Center-Distance Solver}
-For fixed integer $N$, the center distance $a$ is solved from the signed final
-step closure residual. The reported geometric closure is
-\begin{equation}e_c=\|\mathbf p_N-\mathbf p_0\|,\end{equation}
-and the maximum pitch error is the maximum deviation of each span from $P$.
+Portanto, o programa funciona simultaneamente como um catálogo digital
+orientado a CAD e como uma ferramenta de resolução geométrica do acionamento.
 
-\section{CAD Pose Generation}
-Each span supplies position $(x_i,0,y_i)$ and angle
-$\theta_i=\operatorname{atan2}(y_{i+1}-y_i,x_{i+1}-x_i)$. Instances use
-\texttt{App::Link} and share three rigid templates.
+\figpendente{Visão geral do problema: catálogo comercial à esquerda, cálculo discreto da distância entre centros ao centro e conjunto CAD no FreeCAD à direita.}{Criar uma figura nova combinando uma tabela simplificada do catálogo ENCO, o diagrama \codigo{polygonal\_layout\_asa80\_11\_20.png} do repositório \emph{chain-drive-geometry-calculator} e uma captura do Workbench atual.}
 
-\section{InnerLink}
-The InnerLink template contains two inner plates and the roller/bushing
-interfaces, with its two joints separated by one pitch.
-% TODO FIGURE: InnerLink
+\section{Resultados fornecidos ao usuário}
 
-\section{OuterLink}
-The OuterLink contains outer plates and connecting pins with the same canonical
-joint convention.
-% TODO FIGURE: OuterLink
-
-\section{OffsetLink}
-The preserved validated OffsetLink handles odd chains. Its terminal span is
-mapped roller-to-pin, so the placement reverses the canonical template by
-$180^\circ$ while preserving the solver endpoints.
-% TODO FIGURE: OffsetLink
-
-\section{Sprocket Pitch Geometry}
-Pitch-circle geometry uses the exact polygonal relation above rather than a
-continuous belt approximation.
-
-\section{Roller Seating}
-The roller diameter from the chain catalog controls the seating construction
-and associated root geometry.
-
-\section{Tooth-Space Mathematical Construction}
-The generator constructs one tooth-space cutter from points, lines, and tangent
-arcs, then applies a polar pattern before subtraction.
-% TODO FIGURE: tooth-space construction
-
-\section{Commercial Sprocket Body}
-Outside diameter, hub diameter, overall width, pilot bore, and maximum bore are
-read from the selected ENCO record. Missing or invalid records are not offered.
-
-\section{Parametric Sprocket CAD Generation}
-A revolved body is cut by patterned tooth spaces and the selected bore. The
-result is cached in the user's FreeCAD data area and copied into assemblies.
-
-\section{Complete Assembly}
-The small sprocket is centered at $X=0$ and the large sprocket at the corrected
-distance. Phase is chosen from the nearest roller center on each pitch circle.
-% TODO FIGURE: complete assembly
-
-\section{FreeCAD Workbench Architecture}
-\texttt{Init.py} remains headless-safe. \texttt{InitGui.py} registers the
-workbench and three commands. Resources resolve relative to the installed module.
-
-\section{Validation}
-The canonical ASA80 11/20/400 case must give $N=47$, an OffsetLink, and corrected
-center distance approximately $398.338658801$ mm, with closure and pitch errors
-below $10^{-8}$ mm. Catalog and CAD validity checks supplement this regression.
-
-\section{Limitations}
-Validation does not establish load capacity or manufacturability. Multi-strand
-chains, dynamics, wear, interference over motion, and formal Addon Manager
-compatibility remain outside version 0.1.0.
-
-\section{References}
+O Workbench oferece três saídas principais:
 \begin{itemize}
-\item ASME B29.1, Precision Power Transmission Roller Chains, Attachments, and Sprockets.
-\item ENCO commercial roller-chain and sprocket dimension tables used by the supplied catalogs.
-\item FreeCAD documentation for Python workbenches and \texttt{App::Link}.
+\item \textbf{Roda dentada isolada:} gera uma roda dentada comercial da série
+ASA selecionada, com número de dentes disponível no catálogo e furo dentro dos
+limites cadastrados;
+\item \textbf{Corrente isolada:} gera uma corrente fechada, formada por elos
+internos, externos e, quando necessário, um elo de redução, já posicionados de
+acordo com a solução do entrecentros;
+\item \textbf{Conjunto completo:} gera duas rodas dentadas e a corrente em um
+único documento, com a roda menor em (X=0), a roda maior na distância
+corrigida e as peças faseadas em relação aos centros dos roletes.
 \end{itemize}
-\end{document}
 
+Antes da geração tridimensional, o usuário recebe o número de elos, a indicação
+de elo de redução, a distância desejada, a distância corrigida, a correção
+necessária, o comprimento discreto (Np), o resíduo de fechamento e o erro
+máximo de passo.
+
+\figpendente{As três opções do Workbench: roda dentada, corrente e conjunto completo.}{Capturas novas dos três comandos registrados por \codigo{chain\_drive\_commands.py}; usar a mesma série ASA e o mesmo padrão visual.}
+
+\section{Condição de contorno: componentes ASA comerciais}
+
+O escopo atual não é um gerador universal de correntes e rodas dentadas. A
+condição de contorno do projeto é a disponibilidade comercial registrada nos
+catálogos adotados. Primeiro é selecionada a série ASA; em seguida, o programa
+apresenta somente números de dentes e dimensões para os quais existe um registro
+válido.
+
+Essa barreira de entrada é importante. Uma combinação pode ser matematicamente
+possível sem corresponder a uma peça comercial considerada no projeto. O
+Workbench não interpola silenciosamente dimensões ausentes e não cria uma roda
+dentada comercial inexistente. A matemática opera dentro do domínio definido
+pelas tabelas instaladas.
+
+As dimensões teóricas de passo e do vão entre dentes são combinadas com
+dimensões comerciais de corpo. Assim, deve-se distinguir:
+\begin{itemize}
+\item \textbf{dimensões da corrente}, associadas à série ASA;
+\item \textbf{geometria teórica de engrenamento}, associada ao passo, ao
+diâmetro do rolete e ao número de dentes;
+\item \textbf{dimensões comerciais da roda}, como diâmetro externo, cubo,
+comprimento e limites de furação.
+\end{itemize}
+
+\section{Fluxo do catálogo ao modelo CAD}
+
+O fluxo de dados pode ser resumido por
+\[
+\text{catálogo}\rightarrow\text{registro validado}\rightarrow
+\text{cálculo geométrico}\rightarrow\text{parâmetros CAD}\rightarrow
+\text{corpos e conjunto FreeCAD}.
+\]
+
+O arquivo \codigo{data/chains/enco\_asa\_chains.csv} contém dimensões das
+correntes. Os arquivos em \codigo{data/sprockets/enco/} contêm as rodas
+dentadas por série. Os módulos \codigo{core/catalog.py} e
+\codigo{core/sprocket\_catalog.py} normalizam separadores decimais, verificam
+campos e disponibilizam apenas registros válidos. O módulo
+\codigo{application.py} reúne o catálogo, o solucionador e os geradores CAD.
+
+\figpendente{Fluxo de informação e módulos: arquivos de catálogo, núcleo matemático, geradores CAD, interface e documento FreeCAD.}{Desenhar a partir de \codigo{application.py} e \codigo{docs/ARCHITECTURE\_INVENTORY.md}; não requer figura externa.}
+
+\section{Dados dimensionais da corrente}
+
+Para cada série ASA, os parâmetros geométricos efetivamente consumidos são:
+\begin{table}[ht]
+\centering
+\caption{Dimensões da corrente utilizadas na geração CAD.}
+\begin{tabular}{lll}\toprule
+Símbolo & Campo & Significado\\\midrule
+(p)&\codigo{pitch\_P\_mm}&passo\\
+(E)&\codigo{inner\_width\_E\_mm}&largura interna livre\\
+(D_R)&\codigo{roller\_diameter\_R\_mm}&diâmetro do rolete\\
+(H)&\codigo{plate\_height\_H\_mm}&altura da placa\\
+(D_G)&\codigo{pin\_diameter\_G\_mm}&diâmetro do pino\\
+(L)&\codigo{overall\_width\_L\_mm}&largura total\\
+(T_p)&\codigo{plate\_thickness\_T\_mm}&espessura da placa\\\bottomrule
+\end{tabular}
+\end{table}
+
+Para a corrente ASA80 usada no caso canônico, (p=25{,}40) mm,
+(E=15{,}75) mm, (D_R=15{,}88) mm, (H=24{,}00) mm,
+(D_G=7{,}92) mm, (L=32{,}70) mm e (T_p=3{,}25) mm.
+
+\figpendente{Corrente de rolos cotada com (p,E,D_R,H,D_G,L,T_p).}{Redesenhar a anatomia mostrada no manual iwis, p. 9, ou no guia Tsubaki, substituindo a nomenclatura pela adotada nesta nota.}
+
+\section{Dados comerciais da roda dentada}
+
+Cada registro de roda dentada contém número de dentes (z), diâmetro de passo
+de catálogo para conferência, diâmetro externo, diâmetro do cubo, comprimento
+total, furo piloto e furo máximo. O furo escolhido deve satisfazer
+\begin{equation}
+D_{piloto}\leq D_f\leq D_{máximo}.
+\end{equation}
+
+Esses valores definem o corpo comercial. O perfil do vão entre dentes é
+calculado separadamente e subtraído desse corpo. Essa separação permite que uma
+mesma formulação teórica seja aplicada às opções comerciais cadastradas sem
+confundir diâmetro de passo com diâmetro do bruto.
+
+\figpendente{Desenho comercial da roda dentada com diâmetro externo, cubo, largura da flange, comprimento e furos.}{Localizar a página específica da série no \codigo{catalogo\_enco.pdf} e redesenhar; não inserir a página escaneada.}
+
+\section{Entradas do cálculo do acionamento}
+
+As entradas principais são
+\begin{equation}
+p,\qquad z_1,\qquad z_2,\qquad C_d,
+\end{equation}
+onde (p) é obtido do catálogo da corrente, (z_1) e (z_2) são números de
+dentes comercialmente disponíveis, e (C_d) é a distância entre centros
+desejada. O número total de elos (N) não é imposto inicialmente. Ele é
+estimado pela geometria contínua e testado como inteiro no modelo discreto.
+
+O usuário também pode exigir um número par de elos. Quando essa restrição não é
+ativada, uma solução com (N) ímpar é permitida e requer um elo de redução
+(\emph{OffsetLink}).
+
+\section{Geometria de passo das rodas dentadas}
+
+Os centros dos roletes assentados formam um polígono regular. Para uma roda
+com (z) dentes,
+\begin{equation}
+r=\frac{p}{2\sin(\pi/z)},\qquad D_p=2r=\frac{p}{\sin(\pi/z)}.
+\label{eq:raio_passo}
+\end{equation}
+Logo,
+\begin{equation}
+r_1=\frac{p}{2\sin(\pi/z_1)},\qquad
+r_2=\frac{p}{2\sin(\pi/z_2)}.
+\end{equation}
+O incremento angular entre posições consecutivas é
+\begin{equation}
+\delta_1=\frac{2\pi}{z_1},\qquad
+\delta_2=\frac{2\pi}{z_2}.
+\end{equation}
+
+\figpendente{Polígono de passo com (p,r,D_p,delta).}{Adaptar \codigo{ASAChainDriveApp/docs/figures/sprocket\_fig\_02\_pitch\_geometry.pdf}; comparar com a figura de geometria do repositório antigo.}
+
+\section{Estimativa contínua inicial}
+
+Definindo (Delta r=r_2-r_1), para uma distância (C),
+\begin{equation}
+\alpha(C)=\arcsin\left(\frac{\Delta r}{C}\right),\qquad
+T(C)=\sqrt{C^2-\Delta r^2}.
+\end{equation}
+Os ângulos contínuos de contato são
+\begin{equation}
+\beta_1(C)=\pi-2\alpha(C),\qquad
+\beta_2(C)=\pi+2\alpha(C),
+\end{equation}
+e o comprimento de referência é
+\begin{equation}
+L_{cont}(C)=r_1\beta_1(C)+r_2\beta_2(C)+2T(C).
+\label{eq:comprimento_continuo}
+\end{equation}
+Assim,
+\begin{equation}
+N_0=\operatorname{round}\left(\frac{L_{cont}(C_d)}{p}\right).
+\end{equation}
+
+Essa formulação é somente uma estimativa. Sobre os arcos, o comprimento de arco
+entre dois pontos é diferente do comprimento da corda rígida que representa um
+elo. A solução física final deve impor o passo entre centros de roletes.
+
+\figpendente{Geometria contínua com raios, tangentes, ângulos de contato e distância entre centros.}{Adaptar a figura conceitual da formulação em \codigo{complete\_mathematical\_formulation\_en.tex}; redesenhar com a nomenclatura portuguesa.}
+
+\section{Fundamento discreto: roletes e intervalos de passo}
+
+O projeto anterior \emph{chain-drive-geometry-calculator} estabeleceu uma
+distinção essencial: (M) roletes em contato com uma roda definem (M-1)
+intervalos de passo no arco. Definindo (M_1,M_2) como números de roletes em
+contato e (S,R) como intervalos nos ramos superior e inferior,
+\begin{equation}
+(M_1-1)+S+(M_2-1)+R=N,
+\label{eq:topologia}
+\end{equation}
+ou (M_1+M_2+S+R=N+2). Essa equação descreve a topologia discreta e continua
+útil para explicar por que o número de elos não pode ser tratado como um
+comprimento contínuo.
+
+Para cada roda,
+\begin{equation}q=\frac{M-1}{2}.\end{equation}
+Se (M) é ímpar, há um rolete no eixo de simetria; se (M) é par, o eixo passa
+entre dois roletes. Essa diferença é visível nas figuras do projeto anterior e
+deve ser mantida nas novas ilustrações.
+
+\figpendente{Comparação entre contato com (M) ímpar e (M) par, mostrando roletes e intervalos.}{Adaptar \codigo{polygonal\_layout\_asa80\_11\_20.png} e \codigo{polygonal\_layout\_asa80\_19\_20.png} do repositório \emph{chain-drive-geometry-calculator}.}
+
+\section{Formulação topológica direta do projeto anterior}
+
+No sistema (O_1=(0,0)), (O_2=(C,0)), os extremos simétricos de contato da
+roda menor podem ser escritos como
+\begin{align}
+A_t&=O_1+r_1[\cos(\pi-q_1\delta_1),\ \sin(\pi-q_1\delta_1)]^T,\\
+A_b&=O_1+r_1[\cos(\pi+q_1\delta_1),\ \sin(\pi+q_1\delta_1)]^T,
+\end{align}
+com (q_1=(M_1-1)/2). Para a roda maior,
+\begin{align}
+B_t(C)&=O_2+r_2[\cos(q_2\delta_2),\ \sin(q_2\delta_2)]^T,\\
+B_b(C)&=O_2+r_2[\cos(-q_2\delta_2),\ \sin(-q_2\delta_2)]^T,
+\end{align}
+com (q_2=(M_2-1)/2).
+
+Os ramos retos satisfazem
+\begin{equation}
+\|B_t-A_t\|=Sp,\qquad \|A_b-B_b\|=Rp.
+\end{equation}
+Para uma topologia válida, a distância entre centros pode ser obtida diretamente:
+\begin{equation}
+C=A_{t,x}-r_2\cos(q_2\delta_2)+
+\sqrt{(Sp)^2-[r_2\sin(q_2\delta_2)-A_{t,y}]^2}.
+\label{eq:centro_topologico}
+\end{equation}
+
+Essa formulação explica matematicamente a seleção de topologias e permanece
+como base documental do problema. O Workbench atual usa uma implementação
+mais geral por caminhada de cordas sobre o caminho de passo, descrita a seguir.
+As duas formulações não devem ser apresentadas como se fossem o mesmo algoritmo:
+a primeira explicita (M_1,S,M_2,R); a segunda fecha diretamente uma sequência
+de (N) passos rígidos.
+
+\section{Modelo discreto implementado no Workbench}
+
+Seja (\vet p_i) o centro do rolete (i). A condição fundamental é
+\begin{equation}
+\|\vet p_{i+1}-\vet p_i\|=p,qquad i=0,\ldots,N-1.
+\label{eq:passo_rigido}
+\end{equation}
+O caminho geométrico (et\gamma(s)) conserva os arcos de passo e as tangentes
+externas. Partindo de (s_i), o próximo rolete é a primeira solução à frente de
+\begin{equation}
+f_i(\Delta s)=\|\vet\gamma(s_i+\Delta s)-\vet\gamma(s_i)\|-p=0.
+\label{eq:proximo_rolete}
+\end{equation}
+
+O código procura uma mudança de sinal em incrementos (p/50), limitada a
+(5p), e aplica bisseção. Dessa maneira, os centros permanecem sobre a linha
+de passo, mas a distância entre centros consecutivos é a corda rígida (p), e
+não o comprimento de arco.
+
+\figpendente{Ampliação da transição arco--reta, mostrando incremento de caminho (Delta s) e corda rígida (p).}{Gerar a partir de \codigo{core/discrete\_solver.py}; usar a estética dos gráficos \codigo{plot\_1.png}/\codigo{plot\_2.png} do projeto anterior.}
+
+\section{Seleção do número inteiro de elos}
+
+A partir de (N_0), a implementação testa, por padrão,
+\begin{equation}
+N\in[N_0-3,N_0+3],\qquad N\geq4.
+\end{equation}
+Se a opção de corrente par estiver ativa, candidatos ímpares são removidos.
+Cada candidato é resolvido para sua própria distância (C_N). A solução
+selecionada minimiza
+\begin{equation}|C_N-C_d|.\end{equation}
+Se (N) for ímpar, \codigo{requires\_offset\_link=True} e o último intervalo
+recebe um OffsetLink.
+
+\section{Fechamento e correção da distância entre centros}
+
+Após caminhar (N) cordas, seja (s_N(C)) a coordenada não reduzida módulo o
+comprimento total do caminho (L_\Gamma(C)). A função escalar implementada é
+\begin{equation}
+R_s(C;N)=s_N(C)-L_\Gamma(C).
+\label{eq:residuo_fechamento}
+\end{equation}
+O sinal informa se a caminhada ultrapassou ou não completou uma volta. O
+programa expande um intervalo em torno de (C_d) e aplica bisseção até
+(R_s\approx0). Então, pela periodicidade,
+\begin{equation}
+\vet p_N\approx\vet p_0.
+\end{equation}
+
+É importante distinguir o resíduo assinado (R_s), armazenado atualmente como
+\codigo{closure\_residual\_mm}, do erro euclidiano
+(e_c=\|\vet p_N-\vet p_0\|). O primeiro é a função usada para resolver (C);
+o segundo é uma interpretação geométrica do fechamento.
+
+O erro máximo de passo é
+\begin{equation}
+e_{max}=\max_i\left|\|\vet p_{i+1}-\vet p_i\|-p\right|.
+\end{equation}
+
+\figpendente{Fluxograma: estimativa contínua, candidatos (N), caminhada de passos, raiz em (C), seleção por menor correção.}{Recriar a partir de \codigo{core/discrete\_solver.py}, mantendo a sequência conceitual da documentação antiga.}
+
+\section{Sistema de coordenadas e poses CAD}
+
+O plano do solucionador mapeia-se no FreeCAD por
+\begin{equation}(x,y)_{solver}\mapsto(X,Y,Z)_{CAD}=(x,0,y).\end{equation}
+Um ângulo positivo do solucionador é uma rotação em torno de (-Y). Cada
+template possui
+\begin{equation}
+JointA=(0,0,0),\qquad JointB=(p,0,0).
+\end{equation}
+Para o intervalo (i),
+\begin{equation}
+\theta_i=\operatorname{atan2}(y_{i+1}-y_i,x_{i+1}-x_i).
+\end{equation}
+A translação é ((x_i,0,y_i)) e a rotação é (	heta_i) em torno de (-Y).
+
+\figpendente{Mapeamento do plano matemático para o plano (XZ) do FreeCAD e convenção JointA/JointB.}{Criar com base nos comentários de \codigo{cad/chain\_generator.py}.}
+
+\section{Geração do elo interno}
+
+O InnerLink contém duas placas internas e dois roletes vazados. As placas são
+perfis simétricos de quatro arcos extrudidos ao longo de (Y). O raio da
+extremidade é (H/2); a semialtura de pescoço implementada é
+(h_n=0{,}875H/2), e o raio de alívio é
+\begin{equation}
+r_q=\frac{(H/2)^2-(p/2)^2-h_n^2}{2(h_n-H/2)}.
+\end{equation}
+As faces internas ficam em (Y=\pm E/2). Os roletes possuem diâmetro externo
+(D_R), furo (D_G) e comprimento (E).
+
+\figpendente{InnerLink explodido, componentes, eixos e interfaces.}{Captura nova de \codigo{ASA80\_InnerLink.FCStd} ou template atual.}
+
+\section{Geração do elo externo}
+
+O OuterLink utiliza o mesmo perfil de placa. As placas externas são deslocadas
+para fora do envelope do elo interno, e dois pinos maciços de diâmetro (D_G)
+atravessam a largura total (L) nas posições (X=0) e (X=p). Detalhes de
+rebitamento, ajustes e estampagem específicos de fabricante não são modelados.
+
+\figpendente{OuterLink explodido com placas e pinos.}{Captura nova de \codigo{ASA80\_OuterLink.FCStd} ou template atual.}
+
+\section{Geração do elo de redução}
+
+O OffsetLink fecha cadeias com (N) ímpar. Seu template canônico possui pino em
+JointA e rolete em JointB. As placas deslocadas são construídas por loft entre
+seções retangulares, com transição lateral suave. O sólido inclui placas,
+rolete, bucha e pino de conexão.
+
+O último intervalo do solucionador percorre rolete para pino, sentido oposto ao
+template. Na montagem, a origem é movida para o final do intervalo e a rotação
+recebe (180^\circ). Essa operação preserva os dois centros calculados sem
+alterar a geometria validada do OffsetLink.
+
+\figpendente{OffsetLink em vista lateral/isométrica e reversão no último intervalo.}{Usar \codigo{ASAChainDriveApp/output/validation/ASA80\_OffsetLink\_Standalone\_*.FCStd}.}
+
+\section{Montagem eficiente da corrente}
+
+O documento cria apenas três corpos mestres: InnerLink, OuterLink e OffsetLink.
+Cada elo da corrente é uma instância \codigo{App::Link} de um desses templates.
+Isso reduz a duplicação de representações geométricas e permite montar dezenas
+ou centenas de elos mantendo propriedades individuais de índice, tipo, ângulo e
+mapeamento de interface.
+
+\section{Geometria de assentamento do rolete}
+
+O diâmetro e o raio de assentamento implementados são
+\begin{equation}
+D_s=1{,}005D_R+0{,}003(25{,}4\ \mathrm{mm}),\qquad R_s=D_s/2.
+\end{equation}
+No sistema local do vão, o ponto de passo é (a=(0,r)), e o ponto mais profundo
+é (L=(0,r-R_s)). Essas expressões devem ser conferidas com a edição controlada
+da ASME B29.1 antes da documentação final de fabricação.
+
+\figpendente{Círculo de assentamento, ponto (a), raio (R_s), ponto (L) e rolete.}{Adaptar \codigo{ASAChainDriveApp/docs/figures/sprocket\_fig\_03\_seating\_curve.pdf} e conferir com GEARS pp. 2--4.}
+
+\section{Construção teórica do vão entre dentes}
+
+Com (n=z) e (phi=\pi/n), o código utiliza
+\begin{align}
+A&=35^\circ+60^\circ/n,&B&=18^\circ-56^\circ/n,\\
+ac&=0{,}8D_R,&M&=ac\cos A,&T&=ac\sin A,\\
+E_t&=1{,}3025D_R+0{,}0015(25{,}4\ \mathrm{mm}),\\
+ab&=1{,}4D_R,&W&=ab\cos\phi,&V&=ab\sin\phi,\\
+yz&=D_R[1{,}4\sin(17^\circ-64^\circ/n)-0{,}8\sin(18^\circ-56^\circ/n)],\\
+F&=D_R[0{,}8\cos(18^\circ-56^\circ/n)+1{,}4\cos(17^\circ-64^\circ/n)-1{,}3025]
+-0{,}0015(25{,}4\ \mathrm{mm}).
+\end{align}
+
+São construídos os pontos (a,b,c,x,y,z,L). O ponto (x) é a interseção mais
+distante da reta (cx) com o círculo de assentamento; o centro do arco (xy)
+é a solução de raio (E_t) mais próxima de (c); entre as duas possibilidades
+para (z), escolhe-se a que satisfaz melhor o círculo de raio (F) centrado em
+(b). O perfil passa pela curva de topo (F), segmento (zy), arco (E_t) e
+arco de assentamento até (L), sendo espelhado em relação ao eixo radial.
+
+\figpendente{Construção completa (a,b,c,x,y,z,L), ângulos, raios e eixo de espelhamento.}{Redesenhar a Fig. 1 e as etapas das pp. 3--12 de \codigo{design\_draw\_sprocket\_5.pdf}; usar \codigo{sprocket\_fig\_01\_reference\_system.pdf} como base secundária.}
+
+\section{Geração paramétrica da roda dentada}
+
+O corpo axial combina diâmetro externo, cubo, comprimento e furo comerciais
+com largura de flange e chanfro da seção dentada. O perfil axial é revolucionado
+em torno de (Y). Um cortador de vão é extrudido além das faces, copiado (z)
+vezes e rotacionado em passos (360^\circ/z). A subtração booleana resulta em
+um único sólido válido. Rodas já geradas podem ser reutilizadas por uma
+biblioteca local associada à série, dentes, furo e versão do perfil.
+
+\section{Geração do conjunto completo}
+
+A roda menor é posicionada em (X=0), e a maior em (X=C_N). Para cada roda,
+o programa identifica o centro de rolete mais próximo do respectivo raio de
+passo e usa seu ângulo polar como fase de montagem. Essa regra alinha um vão com
+um rolete no estado estático. Não representa uma simulação dinâmica de
+engrenamento.
+
+\figpendente{Conjunto canônico com rodas, corrente, distância desejada/corrigida e tipos de elo.}{Captura nova do Workbench para ASA80, 11/20 dentes e (C_d=400) mm.}
+
+\section{Integração com o FreeCAD}
+
+\codigo{InitGui.py} registra a bancada e três comandos. A interface unificada
+carrega as opções válidas, impede combinações fora do catálogo, calcula os
+resultados e invalida cálculos antigos quando uma entrada muda.
+\codigo{application.py} constitui a API de alto nível. O núcleo matemático e os
+leitores de catálogo não importam FreeCAD; os módulos CAD são carregados somente
+durante a geração.
+
+\section{Caso canônico de validação}
+
+Para ASA80, (p=25{,}40) mm, (z_1=11), (z_2=20) e (C_d=400) mm, a
+execução atual produz
+\begin{align}
+N&=47,&\text{OffsetLink}&=\text{sim},\\
+C_N&=398{,}338658800570\ \mathrm{mm},&
+\Delta C&=-1{,}661341199430\ \mathrm{mm},\\
+R_s&=2{,}1100\times10^{-10}\ \mathrm{mm},&
+e_{max}&=2{,}1042\times10^{-10}\ \mathrm{mm}.
+\end{align}
+
+Os resíduos são métricas numéricas do algoritmo, não tolerâncias físicas. O
+caso deve ser complementado por medição independente entre eixos e verificação
+do passo no FreeCAD.
+
+\figpendente{Comparação lado a lado entre polígono calculado e medição CAD do caso canônico.}{Adaptar o formato dos pares \codigo{plot\_1.png}/\codigo{cd\_1.png} e \codigo{plot\_2.png}/\codigo{cd\_2.png} do projeto antigo, substituindo pelo caso atual 11/20/400.}
+
+\section{Metodologia de validação}
+
+Cada caso deve registrar versão do código, versão do FreeCAD, registros de
+catálogo, (p,z_1,z_2,C_d,N,C_N,\Delta C), paridade, (R_s), (e_{max}),
+validade dos sólidos e medidas independentes no CAD. A validação é dividida em:
+\begin{enumerate}
+\item invariantes matemáticos e testes puros do solucionador;
+\item validação de leitura e seleção dos catálogos;
+\item geração headless e validade OpenCascade dos sólidos;
+\item teste dos três fluxos da interface;
+\item medição independente dos modelos gerados.
+\end{enumerate}
+
+Uma matriz numérica já cobre séries ASA35 a ASA160, mas a validação CAD completa
+está concentrada na ASA80. Esses níveis não devem ser confundidos.
+
+\section{Limitações}
+
+O Workbench atual considera duas rodas, eixos paralelos, centros alinhados,
+transmissão aberta, corrente simples e opções presentes no catálogo. Não inclui
+esticador, roda intermediária, flecha, elasticidade, desgaste, folga, dinâmica,
+forças de contato, potência, tensão, fadiga, lubrificação ou proteção de máquina.
+Os corpos CAD são representações de projeto; não incorporam todos os detalhes
+de fabricação, ajustes, materiais, tratamentos ou tolerâncias.
+
+O OffsetLink contém proporções funcionais validadas principalmente na ASA80.
+As constantes do perfil dentado e as larguras de flange ainda devem ser
+conferidas contra uma edição controlada da ASME B29.1. As tabelas derivadas do
+ENCO ainda precisam de rastreabilidade página a página.
+
+\section{Trabalhos futuros}
+
+As próximas etapas são: adaptar as figuras do projeto matemático anterior;
+medir vários casos no FreeCAD; validar OffsetLink em outras séries; completar a
+rastreabilidade do catálogo; conferir as constantes normativas; ampliar testes
+de rodas nos extremos de dentes; e somente depois preparar README, publicação e
+distribuição. Extensões futuras podem tratar correntes múltiplas, cubos
+alternativos, esticadores e dimensionamento de potência, mantendo essas análises
+separadas do núcleo geométrico já validado.
+
+\section{Conclusão}
+
+O FreeCAD Chain Drive Workbench transforma dados comerciais de correntes e
+rodas dentadas ASA em modelos CAD organizados e resolve a incompatibilidade
+entre uma distância entre centros arbitrária e um número inteiro de passos. A
+estimativa contínua orienta a busca; a condição final é discreta,
+\(|\vet p_{i+1}-\vet p_i|=p), com fechamento após (N) intervalos. Essa
+combinação de catálogo, matemática e geração paramétrica reduz consultas
+manuais, reconstrução repetitiva de peças e tentativa e erro na montagem CAD.
+
+\section{Referências}
+\begin{enumerate}
+\item ASME International. \emph{ASME B29.1 --- Precision Power Transmission Roller Chains, Attachments, and Sprockets}. Edição controlada aplicável.
+\item ENCO. Catálogo comercial de correntes e rodas dentadas usado na derivação das tabelas instaladas.
+\item GEARS Educational Systems. \emph{Sprocket Tooth Design Formulas and Procedure for Drawing a Sprocket}, 15 p., 2010.
+\item iwis antriebssysteme GmbH \& Co. KG. \emph{Handbook for Chain Engineering: Design and Construction / Examples of Calculation}.
+\item Tsubaki. \emph{Guia de Produtos}, cópia local em português.
+\item ISO 606. \emph{Short-pitch transmission precision roller and bush chains, attachments and associated chain sprockets}.
+\item Schons, D. D. \emph{Chain Drive Geometry Calculator}. Repositório anterior: \url{https://github.com/douglasdschons/chain-drive-geometry-calculator}.
+\item Schons, D. D. \emph{FreeCAD Chain Drive Workbench}. Código-fonte da versão de desenvolvimento 0.1.0.
+\item FreeCAD Project Association. Documentação do FreeCAD, Part/OpenCascade, placements e \codigo{App::Link}.
+\end{enumerate}
+
+\end{document}
